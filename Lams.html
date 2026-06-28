@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مخزن لام اسماش برجر | Lam Smash Burger</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--accent:#f59e0b;--text:#e2e8f0;--danger:#ef4444;--ok:#22c55e;--blue:#3b82f6}
+*{box-sizing:border-box;font-family:'Segoe UI',Tahoma,Arial}
+body{margin:0;background:var(--bg);color:var(--text);padding:16px}
+.container{max-width:900px;margin:0 auto}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+h1,h2{margin:0 0 12px;color:var(--accent);font-size:18px}
+input,button{width:100%;padding:12px;border-radius:10px;border:1px solid #334155;background:#0f172a;color:var(--text);font-size:15px;margin-top:8px}
+button{background:var(--accent);color:#000;font-weight:bold;cursor:pointer;border:none}
+button.danger{background:var(--danger);color:#fff}
+button.ok{background:var(--ok);color:#000}
+button.blue{background:var(--blue);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px;border-bottom:1px solid #334155;text-align:right;vertical-align:middle}
+th{background:#0f172a}
+.badge{padding:4px 8px;border-radius:8px;font-size:12px}
+.badge.low{background:var(--danger)}
+.btn-sm{padding:6px 10px;font-size:13px;width:auto;display:inline-block;margin:2px}
+#loginScreen{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center;z-index:9999}
+.login-box{width:90%;max-width:320px}
+.small{font-size:12px;color:#94a3b8}
+.hidden{display:none!important}
+.actions{white-space:nowrap}
+.empty{ text-align:center; color:#94a3b8; padding:20px }
+.log-day{margin-top:12px; padding-top:8px; border-top:1px dashed #334155}
+.log-day-title{color:var(--accent); font-weight:bold; font-size:13px; margin-bottom:6px}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="card login-box">
+    <h1>مخزن لام اسماش برجر</h1>
+    <p class="small">Lam Smash Burger - Inventory</p>
+    <p id="lockMsg" class="small">ادخل كلمة السر</p>
+    <input id="passInput" type="password" placeholder="كلمة السر | Password" onkeypress="if(event.key==='Enter') login()">
+    <button onclick="login()">دخول | Login</button>
+    <p class="small">ا××××</p>
+  </div>
+</div>
+
+<div id="app" class="container hidden">
+  <div class="card">
+    <h1>مخزن لام اسماش برجر | Lam Smash Burger</h1>
+    <p class="small">المدير: حسن | Manager: Hassan | <span id="todayDate"></span></p>
+  </div>
+
+  <div class="card">
+    <h2>🔍 بحث سريع</h2>
+    <input id="searchBox" type="text" placeholder="ابحث بالاسم او الوحدة او الكمية..." onkeyup="render()">
+  </div>
+
+  <div class="card">
+    <h2>➕ اضافة صنف جديد</h2>
+    <div class="grid">
+      <input id="itemName" placeholder="اسم الصنف | Item Name">
+      <input id="itemUnit" placeholder="الوحدة | كرتون/حبة/كجم">
+      <input id="itemQty" type="number" placeholder="الكمية الاولية | Qty">
+      <input id="itemMin" type="number" placeholder="الحد الادنى | Min Stock">
+      <button style="grid-column:1/-1" onclick="addItem()">اضافة صنف</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📦 المخزون الحالي</h2>
+    <table id="invTable">
+      <thead><tr><th>اسم الصنف</th><th>الوحدة</th><th>الكمية</th><th>تحكم</th><th>حالة</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>📤 تصدير للادارة</h2>
+    <div class="grid">
+      <button onclick="exportExcel()">📊 اكسل Excel</button>
+      <button class="ok" onclick="exportPDF()">📄 PDF للادارة</button>
+      <button class="blue" onclick="exportBackup()">☁️ نسخة احتياطية</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📜 سجل اخر يومين</h2>
+    <div id="logs" class="small"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+const PASS = "1234";
+const STORE = "Lam Smash Burger | مخزن لام اسماش برجر";
+const MANAGER = "Hassan | حسن";
+const TODAY = new Date().toISOString().slice(0,10); // 2026-05-05
+
+let data = JSON.parse(localStorage.getItem('lamsmash_v3') || '{"items":[],"logs":{},"lastLogin":""}'); // logs صارت {}
+
+function getYesterday(){
+  const d = new Date(); d.setDate(d.getDate()-1);
+  return d.toISOString().slice(0,10);
+}
+
+window.onload = () => {
+  document.getElementById('todayDate').textContent = new Date().toLocaleDateString('ar-SA');
+
+  const YESTERDAY = getYesterday();
+  // 1. امسح اي يوم اقدم من امس. نخلي يومين بس
+  Object.keys(data.logs).forEach(date => {
+    if(date < YESTERDAY) delete data.logs[date];
+  });
+  // 2. لو اليوم جديد، انشئ له مصفوفة فاضية
+  if(!data.logs[TODAY]) data.logs[TODAY] = [];
+
+  save();
+
+  if(data.lastLogin === TODAY){
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').classList.remove('hidden');
+    render();
+  } else {
+    document.getElementById('lockMsg').textContent = `جرد يوم جديد: ${new Date().toLocaleDateString('ar-SA')}`;
+  }
+}
+
+function login(){
+  if(document.getElementById('passInput').value.trim() === PASS){
+    data.lastLogin = TODAY;
+    save();
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').classList.remove('hidden');
+    render();
+  }else{ alert("كلمة سر خطأ. حاول 1234"); }
+}
+
+function save(){ localStorage.setItem('lamsmash_v3', JSON.stringify(data)); }
+
+function log(msg){
+  if(!data.logs[TODAY]) data.logs[TODAY] = [];
+  data.logs[TODAY].unshift({time:new Date().toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}), msg});
+  if(data.logs[TODAY].length>100) data.logs[TODAY].pop();
+}
+
+function addItem(){
+  const name = document.getElementById('itemName').value.trim();
+  const unit = document.getElementById('itemUnit').value.trim() || "حبة";
+  const qty = parseInt(document.getElementById('itemQty').value);
+  const min = parseInt(document.getElementById('itemMin').value) || 0;
+  if(!name || isNaN(qty)) return alert("ادخل اسم وكمية");
+  if(data.items.find(i=>i.name.toLowerCase()===name.toLowerCase())) return alert("الصنف موجود. استخدم الازرار +/-");
+  data.items.push({name,unit,qty,min}); log(`+ اضافة ${name} ${qty} ${unit}`);
+  document.getElementById('itemName').value=""; document.getElementById('itemUnit').value="";
+  document.getElementById('itemQty').value=""; document.getElementById('itemMin').value="";
+  save(); render();
+}
+
+function changeQty(i, delta){
+  data.items[i].qty += delta;
+  if(data.items[i].qty < 0) data.items[i].qty = 0;
+  log(`${delta>0?'+':'-'} ${Math.abs(delta)} ${data.items[i].unit} ${data.items[i].name} = ${data.items[i].qty}`);
+  save(); render();
+}
+
+function delItem(i){
+  if(confirm(`حذف ${data.items[i].name} ؟`)){
+    log(`🗑️ حذف ${data.items[i].name}`);
+    data.items.splice(i,1); save(); render();
+  }
+}
+
+function render(){
+  const search = document.getElementById('searchBox').value.toLowerCase().trim();
+  const tbody = document.querySelector('#invTable tbody');
+  tbody.innerHTML = "";
+
+  const filtered = data.items.filter(it =>
+    it.name.toLowerCase().includes(search) ||
+    it.unit.toLowerCase().includes(search) ||
+    String(it.qty).includes(search) ||
+    String(it.min).includes(search)
+  );
+
+  if(filtered.length === 0){
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">${search? 'لا توجد نتائج' : 'لا يوجد اصناف. ابدأ باضافة اول صنف 👆'}</td></tr>`;
+  } else {
+    filtered.forEach((it)=>{
+      const realIndex = data.items.indexOf(it);
+      const low = it.qty <= it.min;
+      tbody.innerHTML += `<tr>
+        <td>${it.name}</td>
+        <td>${it.unit}</td>
+        <td><b>${it.qty}</b><br><span class="small">الحد: ${it.min}</span></td>
+        <td class="actions">
+          <button class="btn-sm ok" onclick="changeQty(${realIndex},1)">+1</button>
+          <button class="btn-sm danger" onclick="changeQty(${realIndex},-1)">-1</button>
+          <button class="btn-sm" onclick="delItem(${realIndex})">🗑️</button>
+        </td>
+        <td>${low?'<span class="badge low">⚠️ قليل</span>':'<span class="badge ok">تمام</span>'}</td>
+      </tr>`;
+    });
+  }
+
+  // 3. عرض يومين بعناوين
+  let html = "";
+  const YESTERDAY = getYesterday();
+  const todayLogs = data.logs[TODAY] || [];
+  const yestLogs = data.logs[YESTERDAY] || [];
+
+  if(todayLogs.length){
+    html += `<div class="log-day"><div class="log-day-title">اليوم ${new Date().toLocaleDateString('ar-SA')}</div>`;
+    html += todayLogs.map(l=>`<b>${l.time}</b> - ${l.msg}`).join('<br>') + `</div>`;
+  }
+  if(yestLogs.length){
+    html += `<div class="log-day"><div class="log-day-title">امس ${new Date(Date.now()-86400000).toLocaleDateString('ar-SA')}</div>`;
+    html += yestLogs.map(l=>`<b>${l.time}</b> - ${l.msg}`).join('<br>') + `</div>`;
+  }
+
+  document.getElementById('logs').innerHTML = html || '<span class="small">لا يوجد حركات اخر يومين</span>';
+}
+
+function exportExcel(){
+  const ws = XLSX.utils.json_to_sheet(data.items.map(i=>({اسم_الصنف:i.name,الوحدة:i.unit,الكمية:i.qty,الحد_الادنى:i.min})));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"المخزون");
+  XLSX.writeFile(wb,`LamSmash_Inventory_${TODAY}.xlsx`);
+}
+
+function exportPDF(){
+  const { jsPDF } = window.jspdf; const doc = new jsPDF(); const date = new Date().toLocaleDateString('ar-SA');
+  doc.setFontSize(16); doc.text(STORE, 105, 15, {align:"center"});
+  doc.setFontSize(11); doc.text(`Manager: ${MANAGER}`, 105, 22, {align:"center"}); doc.text(`Date: ${date}`, 20, 32);
+  let y = 45; doc.setFontSize(11); doc.text("الصنف", 20, y); doc.text("الوحدة", 80, y); doc.text("الكمية", 120, y); doc.text("الحد", 160, y);
+  y+=8; doc.line(20,y,190,y); y+=6;
+  data.items.forEach(it=>{ if(y>270){doc.addPage(); y=20;} doc.text(it.name, 20, y); doc.text(it.unit, 80, y); doc.text(String(it.qty), 120, y); doc.text(String(it.min), 160, y); y+=7; });
+  doc.setFontSize(9); doc.text("Prepared by: فلان | " + new Date().toLocaleString('ar-SA'), 20, 285);
+  doc.save(`LamSmash_Report_${date}.pdf`);
+}
+
+function exportBackup(){
+  const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `LamSmash_Backup_${TODAY}.json`; a.click();
+}
+</script>
+</body>
+</html>
